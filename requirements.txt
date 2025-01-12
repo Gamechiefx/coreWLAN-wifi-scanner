@@ -1,0 +1,4 @@
+pyobjc>=9.2
+pyobjc-framework-CoreWLAN>=9.2
+pyobjc-framework-CoreLocation>=9.2
+pyobjc-framework-Foundation>=9.2
