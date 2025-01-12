@@ -43,52 +43,68 @@ class LocationAuthDelegate(objc.lookUpClass('NSObject')):
         logger.info(f"Location authorization status changed to: {status_map.get(status, 'unknown')}")
 
 class WiFiScanner:
-    def __init__(self, wait_for_auth: bool = True, timeout: int = 30):
-        """Initialize WiFi scanner with CoreWLAN interface"""
+    def __init__(self):
+        """Initialize WiFi scanner"""
         # Load CoreWLAN framework
         bundle_path = '/System/Library/Frameworks/CoreWLAN.framework'
         objc.loadBundle('CoreWLAN',
                        bundle_path=bundle_path,
                        module_globals=globals())
         
-        # Initialize location manager and delegate
-        self.location_delegate = LocationAuthDelegate.alloc().init()
-        self.location_manager = CLLocationManager.alloc().init()
-        self.location_manager.setDelegate_(self.location_delegate)
-        
-        # Request location authorization
-        auth_status = CLLocationManager.authorizationStatus()
-        if auth_status == kCLAuthorizationStatusNotDetermined:
-            logger.info("Requesting location authorization...")
-            self.location_manager.requestWhenInUseAuthorization()
-            
-            if wait_for_auth:
-                start_time = time.time()
-                while not self.location_delegate.auth_event:
-                    time.sleep(0.1)
-                    if time.time() - start_time > timeout:
-                        logger.warning("Timeout waiting for location authorization")
-                        break
-        
-        # Check final authorization status
-        auth_status = CLLocationManager.authorizationStatus()
-        if auth_status not in [kCLAuthorizationStatusAuthorizedWhenInUse, 
-                             kCLAuthorizationStatusAuthorizedAlways]:
-            logger.error("Location services not authorized. WiFi scanning may be limited.")
-            logger.error("Please enable location services for this application in System Settings.")
-        
-        # Get WiFi interface
+        # Get WiFi interface first
         self.interface = CWInterface.interface()
         if not self.interface:
             raise RuntimeError("No WiFi interface available")
             
         logger.info(f"Using WiFi interface: {self.interface.interfaceName()}")
+        
+        # Initialize location manager and delegate
+        self.location_delegate = LocationAuthDelegate.alloc().init()
+        self.location_manager = CLLocationManager.alloc().init()
+        self.location_manager.setDelegate_(self.location_delegate)
+        
+        # Track authorization state
+        self._has_auth = False
+        
+        # Try a quick scan to check if we already have permission
+        try:
+            _, error = self.interface.scanForNetworksWithSSID_error_(None, None)
+            if not error:
+                logger.info("Location services already authorized - WiFi scanning working")
+                self._has_auth = True
+                return
+        except Exception:
+            pass
+
+        # If we get here, we need to check/request authorization
+        auth_status = CLLocationManager.authorizationStatus()
+        if auth_status == kCLAuthorizationStatusNotDetermined:
+            logger.info("Requesting location authorization...")
+            self.location_manager.requestWhenInUseAuthorization()
+            
+        elif auth_status in [kCLAuthorizationStatusAuthorizedWhenInUse, 
+                           kCLAuthorizationStatusAuthorizedAlways]:
+            logger.info("Location services authorized in system settings")
+            self._has_auth = True
+        else:
+            logger.error("Location services not authorized. WiFi scanning may be limited.")
+            logger.error("Please enable location services for this application in System Settings.")
     
     def check_location_auth(self) -> bool:
         """Check if we have proper location authorization"""
-        auth_status = CLLocationManager.authorizationStatus()
-        return auth_status in [kCLAuthorizationStatusAuthorizedWhenInUse,
-                             kCLAuthorizationStatusAuthorizedAlways]
+        if self._has_auth:
+            return True
+            
+        # Recheck authorization through scan
+        try:
+            _, error = self.interface.scanForNetworksWithSSID_error_(None, None)
+            if not error:
+                self._has_auth = True
+                return True
+        except Exception:
+            pass
+        
+        return False
     
     def get_current_network(self) -> Dict[str, str]:
         """Get information about currently connected network"""
@@ -129,11 +145,12 @@ class WiFiScanner:
         }
         return security_map.get(security_mode, f"Unknown ({security_mode})")
     
-    def scan_networks(self, ssid: Optional[str] = None) -> List[Dict[str, str]]:
+    def scan_networks(self, ssid: Optional[str] = None, retry_delay: float = 2.0) -> List[Dict[str, str]]:
         """Scan for available WiFi networks
         
         Args:
             ssid: Optional SSID to scan for specifically
+            retry_delay: Delay in seconds between retries
             
         Returns:
             List of dictionaries containing network information
@@ -143,44 +160,72 @@ class WiFiScanner:
             logger.error("Please enable location services and try again")
             return []
             
-        try:
-            # Convert SSID to NSData if provided
-            ssid_data = None
-            if ssid:
-                ssid_data = ssid.encode('utf-8')
-            
-            # Perform scan
-            networks, error = self.interface.scanForNetworksWithSSID_error_(ssid_data, None)
-            if error:
-                logger.error(f"Scan error: {error}")
-                return []
+        # Convert SSID to NSData if provided
+        ssid_data = None
+        if ssid:
+            ssid_data = ssid.encode('utf-8')
+        
+        # Try scanning until successful
+        attempt = 1
+        while True:
+            try:
+                # Perform scan
+                networks, error = self.interface.scanForNetworksWithSSID_error_(ssid_data, None)
                 
-            # Process results
-            results = []
-            for network in networks:
-                try:
-                    network_info = {
-                        "ssid": network.ssid(),
-                        "bssid": network.bssid(),
-                        "rssi": network.rssiValue(),
-                        "channel": network.wlanChannel(),
-                        "is_ibss": network.ibss(),
-                        "noise": network.noiseMeasurement(),
-                        "country_code": network.countryCode()
-                    }
-                    results.append(network_info)
-                except Exception as e:
-                    logger.warning(f"Error processing network {network.ssid()}: {e}")
-                    continue
+                if error:
+                    error_domain = error.domain()
+                    error_code = error.code()
                     
-            return results
-            
-        except Exception as e:
-            logger.error(f"Error scanning networks: {e}")
-            return []
+                    # Check for resource busy error (NSPOSIXErrorDomain, code 16)
+                    if str(error_domain) == 'NSPOSIXErrorDomain' and error_code == 16:
+                        logger.debug(f"Scan attempt {attempt} failed with resource busy, retrying...")
+                        time.sleep(retry_delay)
+                        attempt += 1
+                        continue
+                    else:
+                        logger.debug(f"Scan attempt {attempt} failed: domain={error_domain}, code={error_code}")
+                        time.sleep(retry_delay)
+                        attempt += 1
+                        continue
+                
+                # Process results
+                results = []
+                for network in networks:
+                    try:
+                        network_info = {
+                            "ssid": network.ssid(),
+                            "bssid": network.bssid(),
+                            "rssi": network.rssiValue(),
+                            "channel": network.wlanChannel(),
+                            "is_ibss": network.ibss(),
+                            "noise": network.noiseMeasurement(),
+                            "country_code": network.countryCode()
+                        }
+                        results.append(network_info)
+                    except Exception as e:
+                        logger.warning(f"Error processing network {network.ssid()}: {e}")
+                        continue
+                
+                # If we got results, return them
+                if results:
+                    return results
+                else:
+                    logger.debug("No networks found, retrying...")
+                    time.sleep(retry_delay)
+                    attempt += 1
+                    continue
+                
+            except Exception as e:
+                logger.debug(f"Scan attempt failed: {e}")
+                time.sleep(retry_delay)
+                attempt += 1
+                continue
     
     def get_preferred_networks(self) -> List[Dict[str, str]]:
         """Get list of preferred (saved) networks"""
+        if not self.check_location_auth():
+            logger.warning("Limited network information available without location authorization")
+            
         try:
             networks = []
             config = self.interface.configuration()
@@ -213,11 +258,7 @@ class WiFiScanner:
 def main():
     try:
         # Initialize scanner with location auth handling
-        scanner = WiFiScanner(wait_for_auth=True, timeout=30)
-        
-        if not scanner.check_location_auth():
-            logger.error("Location services not authorized. Limited functionality available.")
-            return
+        scanner = WiFiScanner()
         
         # Get current network info
         logger.info("\nCurrent Network:")
