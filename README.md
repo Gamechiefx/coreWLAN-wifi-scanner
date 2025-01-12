@@ -46,7 +46,7 @@ pip install pyobjc-framework-CoreLocation
 
 ## Usage
 
-1. Ensure Location Services is enabled for Terminal/Python:
+1. Ensure Location Services is enabled for Terminal/Python: (or you will be prompted)
    - Open System Settings
    - Navigate to Privacy & Security > Location Services
    - Find your Terminal app or Python in the list
@@ -54,7 +54,7 @@ pip install pyobjc-framework-CoreLocation
 
 2. Run the script:
    ```bash
-   python3 test_wifi_scanning.py
+   python3 corewlan-wifi-scanner.py
    ```
 
 ## Output Example
