@@ -1,85 +1,116 @@
-# macOS WiFi Scanner for macOS versions later than 14.4 (sonoma)
+# WiFi Network Scanner for macOS
 
-A Python script that provides comprehensive WiFi network scanning capabilities for macOS using the native CoreWLAN framework. This script supports modern WiFi standards including WiFi 6E and provides detailed network information such as signal strength, channel information, and security modes.
+A Python script that uses CoreWLAN and CoreLocation frameworks to scan for WiFi networks on macOS. This script provides detailed information about the current network connection and available networks in the area.
 
 ## Features
 
-- Get current WiFi connection details
-- Scan for available WiFi networks
-- View WiFi network security modes (WPA2, WPA3, etc.)
-- Support for all WiFi bands (2.4GHz, 5GHz, 6GHz)
-- List preferred (saved) networks
-- Detailed network information including:
-  - SSID and BSSID
-  - Signal strength (RSSI) and noise levels
-  - Channel information with band and width
-  - Country codes
-  - Security types
-  - Network capabilities (IBSS)
+- Get current WiFi connection details including:
+  - SSID
+  - BSSID
+  - Channel information
+  - Signal strength (RSSI)
+  - Noise level
+  - Transmission rate
+  - Security mode
+
+- Scan for available networks with:
+  - Automatic retry on busy interface
+  - Persistent scanning until successful
+  - Support for filtering by specific SSID
+  - Comprehensive network information
+
+- Smart location services handling:
+  - Automatic detection of existing authorization
+  - Quick initial scan to check authorization status
+  - Cached authorization state for better performance
+  - Clear user feedback about authorization status
 
 ## Requirements
 
-- macOS 10.10 or later
-- Python 3.7 or later
-- Location Services access (required for WiFi scanning on modern macOS)
-
-### Python Dependencies
-
-```bash
-pip install pyobjc
-pip install pyobjc-framework-CoreWLAN
-pip install pyobjc-framework-CoreLocation
-```
+- macOS (tested on Sonoma)
+- Python 3.x
+- pyobjc-framework-CoreWLAN
+- pyobjc-framework-CoreLocation
 
 ## Installation
 
-1. Clone or download this repository
-2. Create a virtual environment:
-   ```bash
-   python3 -m venv venv
-   source venv/bin/activate
-   ```
-3. Install dependencies:
-   ```bash
-   pip install -r requirements.txt
-   ```
+1. Create a virtual environment:
+```bash
+python3 -m venv venv
+source venv/bin/activate
+```
+
+2. Install dependencies:
+```bash
+pip install -r requirements.txt
+```
 
 ## Usage
 
-1. Ensure Location Services is enabled for Terminal/Python: (or you will be prompted)
-   - Open System Settings
-   - Navigate to Privacy & Security > Location Services
-   - Find your Terminal app or Python in the list
-   - Enable location access
+Run the script:
+```bash
+./test_wifi_scanning.py
+```
 
-2. Run the script:
-   ```bash
-   python3 corewlan-wifi-scanner.py
-   ```
+First time running:
+1. The script will check if location services are already authorized
+2. If not authorized, it will request location access
+3. Accept the location services prompt when it appears
 
-## Output Example
+Subsequent runs:
+- Uses cached authorization status for faster execution
+- Automatically retries scanning if the interface is busy
+- Continues scanning until successful
 
+## Output
+
+The script provides information in three sections:
+
+1. Current Network:
 ```
 Current Network:
 interface: en0
 ssid: MyNetwork
-bssid: ac:8b:a9:5c:5f:5b
-channel: [channelNumber=40(5GHz), channelWidth={160MHz}]
-rssi: -37
-noise: -92
-tx_rate: 2401.0
+bssid: aa:bb:cc:dd:ee:ff
+channel: channelNumber=36(5GHz)
+rssi: -45
+noise: -90
+tx_rate: 1299.0
 security_mode: WPA2 Personal
-
-Available Networks:
---------------------------------------------------
-ssid: Network1
-bssid: 42:70:4e:59:37:7f
-rssi: -62
-channel: [channelNumber=128(5GHz), channelWidth={160MHz}]
-is_ibss: False
-noise: 0
-country_code: US
 ```
+
+2. Available Networks:
+- List of all visible networks with their details
+- Automatically retries if scanning is temporarily unavailable
+
+3. Preferred Networks:
+- List of networks saved in system preferences
+
+## Error Handling
+
+- Gracefully handles "Resource busy" errors with automatic retry
+- Clear feedback about location services status
+- Detailed debug logging available if needed
+- Resets authorization state on persistent errors
+
+## Debugging
+
+To enable debug logging, set the logging level to DEBUG in the script:
+```python
+logger.setLevel(logging.DEBUG)
+```
+
+This will show additional information such as:
+- Scan retry attempts
+- Authorization status changes
+- Interface busy states
+
+## Notes
+
+- Location services must be enabled for WiFi scanning on macOS
+- The script will continue retrying indefinitely until a successful scan
+- Authorization status is cached to minimize system checks
+- Debug messages are hidden by default for cleaner output
 
 ## Security Note
 
