@@ -1,4 +1,4 @@
-# WiFi Network Scanner for macOS
+# WiFi Network Scanner for macOS 14.4+
 
 A Python script that uses CoreWLAN and CoreLocation frameworks to scan for WiFi networks on macOS. This script provides detailed information about the current network connection and available networks in the area.
 
@@ -27,7 +27,7 @@ A Python script that uses CoreWLAN and CoreLocation frameworks to scan for WiFi 
 
 ## Requirements
 
-- macOS (tested on Sonoma)
+- macOS (tested on Sequoia)
 - Python 3.x
 - pyobjc-framework-CoreWLAN
 - pyobjc-framework-CoreLocation
